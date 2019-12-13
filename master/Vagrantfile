@@ -1,0 +1,121 @@
+# -*- mode: ruby -*-
+# vi:set ft=ruby sw=2 ts=2 sts=2:
+
+# This is the network interface name. For VirtualBox, "eth1" should be fine. If using
+# Windows Hyper-V, then "eth0" should be used.
+IFNAME = "eth1"
+
+IP_NW = "192.168.5."
+MASTER_IP_START = 10
+
+# This is the domain that will be used for Harbor. You should make sure that whatever
+# TLS certificate also uses this domain
+HARBOR_DOMAIN = "harbor.whizzosoftware.com"
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+Vagrant.configure("2") do |config|
+  # The most common configuration options are documented and commented below.
+  # For a complete reference, please see the online documentation at
+  # https://docs.vagrantup.com.
+
+  # Every Vagrant development environment requires a box. You can search for
+  # boxes at https://vagrantcloud.com/search.
+  # config.vm.box = "base"
+  config.vm.box = "bento/ubuntu-16.04"
+
+  # Disable automatic box update checking. If you disable this, then
+  # boxes will only be checked for updates when the user runs
+  # `vagrant box outdated`. This is not recommended.
+  config.vm.box_check_update = false
+
+  # Create a public network, which generally matched to bridged network.
+  # Bridged networks make the machine appear as another physical device on
+  # your network.
+  # config.vm.network "public_network"
+
+  # Share an additional folder to the guest VM. The first argument is
+  # the path on the host to the actual folder. The second argument is
+  # the path on the guest to mount the folder. And the optional third
+  # argument is a set of non-required options.
+  # config.vm.synced_folder "../data", "/vagrant_data"
+
+  # Provider-specific configuration so you can fine-tune various
+  # backing providers for Vagrant. These expose provider-specific options.
+  # Example for VirtualBox:
+  #
+  # config.vm.provider "virtualbox" do |vb|
+  #   # Customize the amount of memory on the VM:
+  #   vb.memory = "1024"
+  # end
+  #
+  # View the documentation for the provider you are using for more
+  # information on available options.
+
+  # Provision Master Nodes
+  config.vm.define "master" do |node|
+    # Name shown in the GUI
+    node.vm.provider "virtualbox" do |vb|
+        vb.name = "kubernetes-master"
+        vb.memory = 2048
+        vb.cpus = 2
+    end
+    node.vm.provider "hyperv" do |h|
+        h.vmname = "kubernetes-master"
+        h.memory = 2048
+        h.cpus = 2
+    end
+    node.vm.hostname = "master"
+    node.vm.network :private_network, ip: IP_NW + "#{MASTER_IP_START + 1}"
+    node.vm.network "forwarded_port", guest: 22, host: "#{2711}"
+
+    node.vm.provision "setup-hosts", :type => "shell", :path => "../common/ubuntu/vagrant/setup-hosts.sh" do |s|
+      s.args = ["#{IFNAME}"]
+    end
+
+    node.vm.provision "setup-dns", type: "shell", :path => "../common/ubuntu/update-dns.sh"
+    node.vm.provision "copy-ssh-private", type: "file", source: "../common/ssh/id_rsa", destination: "~/.ssh/id_rsa"
+    node.vm.provision "copy-ssh-public", type: "file", source: "../common/ssh/id_rsa.pub", destination: "~/.ssh/id_rsa.pub"
+    node.vm.provision "copy-tls-private", type: "file", source: "tls/tls.key", destination: "~/workspace/tls.key"
+    node.vm.provision "copy-tls-public", type: "file", source: "tls/tls.crt", destination: "~/workspace/tls.crt"
+    node.vm.provision "authorize-ssh-key", type: "shell", :path => "../common/ubuntu/authorize-ssh-key.sh"
+    node.vm.provision "install-docker", type: "shell", :path => "../common/ubuntu/install-docker.sh"
+    node.vm.provision "install-k8s", :type => "shell", :path => "../common/ubuntu/install-k8s.sh"
+    node.vm.provision "k8s-provision-certs", :type => "shell", :path => "scripts/01-provision-certs.sh" do |s|
+      s.args = ["#{IFNAME}"]
+    end
+    node.vm.provision "k8s-generate-kubeconfigs", :type => "shell", :path => "scripts/02-generate-kubeconfigs.sh" do |s|
+      s.args = ["#{IFNAME}"]
+    end
+    node.vm.provision "k8s-generate-encryption-key", :type => "shell", :path => "scripts/03-generate-encryption-key.sh"
+    node.vm.provision "k8s-install-etcd", :type => "shell", :path => "scripts/04-install-etcd.sh" do |s|
+      s.args = ["#{IFNAME}"]
+    end
+    node.vm.provision "k8s-install-controlplane", :type => "shell", :path => "scripts/05-install-controlplane.sh" do |s|
+      s.args = ["#{IFNAME}"]
+    end
+    node.vm.provision "k8s-configure-kubectl", :type => "shell", :path => "scripts/06-configure-kubectl.sh" do |s|
+      s.args = ["#{IFNAME}"]
+    end
+    node.vm.provision "k8s-create-worker-bootstrap", :type => "shell", :path => "scripts/07-create-worker-bootstrap.sh"
+    node.vm.provision "k8s-install-flannel", :type => "shell", :path => "scripts/08-install-flannel.sh" do |s|
+      s.args = ["#{IFNAME}"]
+    end
+    node.vm.provision "k8s-install-coredns", :type => "shell", :path => "scripts/09-install-coredns.sh"
+    node.vm.provision "k8s-create-approve-csr-script", :type => "shell", :path => "scripts/10-create-approve-csr-script.sh"
+    node.vm.provision "k8s-configure-kubeapi-perms", :type => "shell", :path => "scripts/11-configure-kubeapi-to-kubelet-perms.sh"
+    node.vm.provision "k8s-install-helm", :type => "shell", :path => "scripts/13-install-helm.sh"
+    node.vm.provision "k8s-install-ingress", :type => "shell", :path => "scripts/14-install-nginx-ingress.sh"
+    node.vm.provision "k8s-install-harbor", :type => "shell", :path => "scripts/15-install-harbor.sh" do |s|
+      s.args = ["#{HARBOR_DOMAIN}"]
+    end
+    node.vm.provision "k8s-install-kpack", :type => "shell", :path => "scripts/16-install-kpack.sh"
+    node.vm.provision "k8s-print-ip", :type => "shell", :path => "scripts/17-print-ip.sh" do |s|
+      s.args = ["#{IFNAME}"]
+    end
+
+  end
+
+end

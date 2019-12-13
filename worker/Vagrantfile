@@ -1,0 +1,100 @@
+# -*- mode: ruby -*-
+# vi:set ft=ruby sw=2 ts=2 sts=2:
+
+# Prompt the user to enter the master node's IP address
+print "Master Node IP: "
+MASTER_IP = STDIN.gets.chomp
+
+# This is the network interface name. For VirtualBox, "eth1" should be fine. If using
+# Windows Hyper-V, then "eth0" should be used.
+IFNAME = "eth1"
+
+IP_NW = "192.168.5."
+NODE_IP_START = 20
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+Vagrant.configure("2") do |config|
+  # The most common configuration options are documented and commented below.
+  # For a complete reference, please see the online documentation at
+  # https://docs.vagrantup.com.
+
+  # Every Vagrant development environment requires a box. You can search for
+  # boxes at https://vagrantcloud.com/search.
+  # config.vm.box = "base"
+  config.vm.box = "bento/ubuntu-16.04"
+
+  # Disable automatic box update checking. If you disable this, then
+  # boxes will only be checked for updates when the user runs
+  # `vagrant box outdated`. This is not recommended.
+  config.vm.box_check_update = false
+
+  # Create a public network, which generally matched to bridged network.
+  # Bridged networks make the machine appear as another physical device on
+  # your network.
+  # config.vm.network "public_network"
+
+  # Share an additional folder to the guest VM. The first argument is
+  # the path on the host to the actual folder. The second argument is
+  # the path on the guest to mount the folder. And the optional third
+  # argument is a set of non-required options.
+  # config.vm.synced_folder "../data", "/vagrant_data"
+
+  # Provider-specific configuration so you can fine-tune various
+  # backing providers for Vagrant. These expose provider-specific options.
+  # Example for VirtualBox:
+  #
+  # config.vm.provider "virtualbox" do |vb|
+  #   # Customize the amount of memory on the VM:
+  #   vb.memory = "1024"
+  # end
+  #
+  # View the documentation for the provider you are using for more
+  # information on available options.
+
+  # Provision Worker Nodes
+  (1..2).each do |i|
+    config.vm.define "worker-#{i}" do |node|
+        node.vm.provider "virtualbox" do |vb|
+            vb.name = "kubernetes-ha-worker-#{i}"
+            vb.memory = 2048
+            vb.cpus = 2
+        end
+        node.vm.provider "hyperv" do |h|
+            h.vmname = "kubernetes-ha-worker-#{i}"
+            h.memory = 2048
+            h.cpus = 2
+        end
+        node.vm.hostname = "worker-#{i}"
+        node.vm.network :private_network, ip: IP_NW + "#{NODE_IP_START + i}"
+		    node.vm.network "forwarded_port", guest: 22, host: "#{2720 + i}"
+
+        node.vm.provision "setup-hosts", :type => "shell", :path => "../common/ubuntu/vagrant/setup-hosts.sh" do |s|
+          s.args = ["#{IFNAME}"]
+        end
+
+        node.vm.provision "setup-dns", type: "shell", :path => "../common/ubuntu/update-dns.sh"
+        node.vm.provision "copy-ssh-private", type: "file", source: "../common/ssh/id_rsa", destination: "~/.ssh/id_rsa"
+        node.vm.provision "copy-ssh-public", type: "file", source: "../common/ssh/id_rsa.pub", destination: "~/.ssh/id_rsa.pub"
+        node.vm.provision "authorize-ssh-key", type: "shell", :path => "../common/ubuntu/authorize-ssh-key.sh"
+        node.vm.provision "install-docker", type: "shell", :path => "../common/ubuntu/install-docker.sh"
+        node.vm.provision "allow-bridge-nf-traffic", :type => "shell", :path => "../common/ubuntu/allow-bridge-nf-traffic.sh"
+        node.vm.provision "install-k8s", :type => "shell", :path => "../common/ubuntu/install-k8s.sh"
+        node.vm.provision "k8s-install-kubelet", :type => "shell", :path => "scripts/01-install-kubelet.sh" do |s|
+          s.args = ["#{MASTER_IP}","#{IFNAME}"]
+        end
+        node.vm.provision "k8s-install-kubeproxy", :type => "shell", :path => "scripts/02-install-kubeproxy.sh" do |s|
+          s.args = ["#{MASTER_IP}","#{IFNAME}"]
+        end
+        node.vm.provision "k8s-add-hostname-to-master", :type => "shell", :path => "scripts/03-add-hostname-to-master.sh" do |s|
+          s.args = ["#{MASTER_IP}","#{IFNAME}"]
+        end
+        node.vm.provision "k8s-approve-csr", :type => "shell", :path => "scripts/04-approve-csr.sh" do |s|
+          s.args = ["#{MASTER_IP}"]
+        end
+
+    end
+  end
+end
