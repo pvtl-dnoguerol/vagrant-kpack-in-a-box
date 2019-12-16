@@ -8,9 +8,10 @@ MASTER_IP = STDIN.gets.chomp
 # This is the network interface name. For VirtualBox, "eth1" should be fine. If using
 # Windows Hyper-V, then "eth0" should be used.
 IFNAME = "eth1"
-
 IP_NW = "192.168.5."
 NODE_IP_START = 20
+
+K8S_VERSION = "1.14.6"
 
 # All Vagrant configuration is done below. The "2" in Vagrant.configure
 # configures the configuration version (we support older styles for
@@ -81,9 +82,11 @@ Vagrant.configure("2") do |config|
         node.vm.provision "authorize-ssh-key", type: "shell", :path => "../common/ubuntu/authorize-ssh-key.sh"
         node.vm.provision "install-docker", type: "shell", :path => "../common/ubuntu/install-docker.sh"
         node.vm.provision "allow-bridge-nf-traffic", :type => "shell", :path => "../common/ubuntu/allow-bridge-nf-traffic.sh"
-        node.vm.provision "install-k8s", :type => "shell", :path => "../common/ubuntu/install-k8s.sh"
+        node.vm.provision "install-k8s", :type => "shell", :path => "../common/ubuntu/install-k8s.sh" do |s|
+          s.args = ["#{K8S_VERSION}"]
+        end
         node.vm.provision "k8s-install-kubelet", :type => "shell", :path => "scripts/01-install-kubelet.sh" do |s|
-          s.args = ["#{MASTER_IP}","#{IFNAME}"]
+          s.args = ["#{MASTER_IP}","#{IFNAME}","#{K8S_VERSION}"]
         end
         node.vm.provision "k8s-install-kubeproxy", :type => "shell", :path => "scripts/02-install-kubeproxy.sh" do |s|
           s.args = ["#{MASTER_IP}","#{IFNAME}"]

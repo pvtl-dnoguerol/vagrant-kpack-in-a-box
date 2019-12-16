@@ -4,15 +4,15 @@ cd ~/workspace
 
 MASTER_ADDRESS=$1
 IFNAME=$2
-VERSION=v1.13.0
+K8S_VERSION=$3
 CIDR_NETWORK="$(sipcalc $IFNAME -i | grep 'Network address' | awk -F- '{print $2}' | sed 's/ //')"
 CIDR_MASK="$(sipcalc $IFNAME -i | grep -m 1 'Network mask (bits)' | awk -F- '{print $2}' | sed 's/ //')"
 CIDR="$CIDR_NETWORK/$CIDR_MASK"
 
 wget -q --https-only --timestamping \
-  https://storage.googleapis.com/kubernetes-release/release/$VERSION/bin/linux/amd64/kubectl \
-  https://storage.googleapis.com/kubernetes-release/release/$VERSION/bin/linux/amd64/kube-proxy \
-  https://storage.googleapis.com/kubernetes-release/release/$VERSION/bin/linux/amd64/kubelet
+  https://storage.googleapis.com/kubernetes-release/release/v$K8S_VERSION/bin/linux/amd64/kubectl \
+  https://storage.googleapis.com/kubernetes-release/release/v$K8S_VERSION/bin/linux/amd64/kube-proxy \
+  https://storage.googleapis.com/kubernetes-release/release/v$K8S_VERSION/bin/linux/amd64/kubelet
 
 mkdir -p \
   /etc/cni/net.d \
